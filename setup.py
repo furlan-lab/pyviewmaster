@@ -16,5 +16,12 @@ setup(
         'Programming Language :: Python :: 3',
         # Add other classifiers as appropriate
     ],
+    install_requires=[
+        "numpy",
+        "pandas",  
+        "scanpy",
+        "scikit-learn",
+        "scipy" # Add your package dependencies here
+    ],
     python_requires='>=3.9',
 )
