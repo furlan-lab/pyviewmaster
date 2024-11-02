@@ -7,7 +7,7 @@ version 0.0.1
 
 pyviewmaster is a method for performing unsupervised classification of single cells across datasets written for use in the python environment using Rust machine learning
 
-**Visit [HowTo](https://furlan-lab.github.io/viewmastR/) for installation instructions and tutorials**
+**Visit [HowTo](https://github.com/furlan-lab/pyviewmaster/blob/main/notebooks/01_load_data.ipynb) for a tutorials**
 
 ## Acknowledgements
 
