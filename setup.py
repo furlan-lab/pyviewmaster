@@ -25,3 +25,8 @@ setup(
     ],
     python_requires='>=3.9',
 )
+
+'''
+python setup.py sdist bdist_wheel
+
+'''

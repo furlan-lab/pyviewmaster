@@ -1,0 +1,44 @@
+# pyviewmaster.toml
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]  # These are build dependencies
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyviewmaster"
+version = "0.0.1"
+description = "viewmastR uses machine learning implemented in Rust to perform automated cell type classification for single-cell genomic data.  Currently viewmastR is authored to work with scRNAseq data, but more features are coming."
+authors = [
+    { name = "Scott Furlan", email = "scottfurlan@example.com" }
+]
+license = { text = "MIT" }
+readme = "README.md"  # Assumes you have a README.md file for package description
+requires-python = ">=3.9"
+keywords = ["single-cell", "genomics", "classification", "machine learning"]
+homepage = "https://github.com/furlan-lab/pyviewmaster"  # Replace with your GitHub URL
+
+# Dependencies for users of your package
+dependencies = [
+    "numpy",
+    "pandas",
+    "scanpy",
+    "scikit-learn",
+    "scipy"
+]
+
+# Optional table for additional URLs like documentation or issue tracker
+[project.urls]
+"Documentation" = "https://github.com/furlan-lab/pyviewmaster#readme"
+"Issues" = "https://github.com/furlan-lab/pyviewmaster/issues"
+"Source Code" = "https://github.com/furlan-lab/pyviewmaster"
+
+# Optional table for classifiers, which help PyPI categorize your package
+[project.classifiers]
+Programming_Language = ["Python :: 3", "Python :: 3.7", "Python :: 3.8", "Python :: 3.9"]
+License = "OSI Approved :: MIT License"
+Operating_System = "OS Independent"
+
+# Optional dependencies (for development, testing, etc.)
+[project.optional-dependencies]
+dev = ["pytest", "twine", "black"]
+docs = ["mkdocs", "mkdocs-material"]
