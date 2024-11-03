@@ -1,6 +1,6 @@
 # pyviewmaster
 
-version 0.0.1
+version 0.0.2
 
 <p align="center"><img src="blob/viewmaster.png" alt="" width="500"></a></p>
 <hr>
