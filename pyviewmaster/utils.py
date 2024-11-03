@@ -44,8 +44,8 @@ def add_souporcell_anndata(
 
     Returns
     -------
-    AnnData
-        An AnnData object with the added assay, dimensionality reduction, and updated metadata.
+    None
+        The function modifies the AnnData object in place.
     """
     # Check if the file exists
     if isinstance(souporcell_file, (list, tuple)):
@@ -130,9 +130,6 @@ def add_souporcell_anndata(
     # Update metadata
     adata.obs[meta_data_label] = fixed_assignments.loc[adata.obs_names].values
 
-    # Return updated AnnData object
-    return adata
-
 def fix_assignment(vector):
     """
     Helper function to fix assignments by collapsing multiplets and 1-indexing.
@@ -152,6 +149,39 @@ def fix_assignment(vector):
     is_not_multiplet = vector != "Multiplet"
     vector[is_not_multiplet] = (vector[is_not_multiplet].astype(int) + 1).astype(str)
     return vector
+
+def sfc(n, scramble=False):
+    """
+    Generate a Color Palette
+
+    Creates a color palette of specified length, optionally scrambled.
+
+    Parameters
+    ----------
+    n : int
+        Number of colors to generate.
+    scramble : bool, optional
+        Indicates whether to randomly shuffle the colors. Default is False.
+
+    Returns
+    -------
+    List[str]
+        A list of hex color codes.
+    """
+    if not isinstance(n, int) or n <= 0:
+        raise ValueError("Please input a positive integer for 'n'.")
+    base_colors = [
+        "#16482A", "#1C7C40", "#45AC49", "#69BC9A", "#FBD43F",
+        "#E77A2B", "#DC3F32", "#932528", "#50191E", "#96C4D9",
+        "#2394C4", "#4575AD", "#8681B0", "#6C5492", "#8C4A8D",
+        "#9E2563", "#492C74", "#E9E52F", "#F8C566", "#D85191"
+    ]
+    # Extend the palette if n is larger than the base_colors list
+    palette_func = lambda x: [base_colors[i % len(base_colors)] for i in range(x)]
+    colors = palette_func(n)
+    if scramble:
+        np.random.shuffle(colors)
+    return colors
 
 def sfcolors(n, scramble=False):
     """
