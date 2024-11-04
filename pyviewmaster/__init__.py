@@ -2,3 +2,4 @@
 
 from .viewmaster import viewmaster  # Import the function from viewmaster.py
 from .utils import *
+from .bulkreference import *
