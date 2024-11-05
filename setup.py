@@ -21,7 +21,8 @@ setup(
         "pandas",  
         "scanpy",
         "scikit-learn",
-        "scipy" # Add your package dependencies here
+        "scipy",
+        "rds2py" # Add your package dependencies here
     ],
     python_requires='>=3.9',
 )

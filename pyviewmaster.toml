@@ -23,7 +23,8 @@ dependencies = [
     "pandas",
     "scanpy",
     "scikit-learn",
-    "scipy"
+    "scipy",
+    "rds2py"
 ]
 
 # Optional table for additional URLs like documentation or issue tracker

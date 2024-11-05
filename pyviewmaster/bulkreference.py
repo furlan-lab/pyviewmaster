@@ -3,8 +3,12 @@ import pandas as pd
 import anndata
 import scipy.sparse
 from scipy.stats import gaussian_kde
+from scipy.sparse import csr_matrix
 from multiprocessing import Pool
 import warnings
+from importlib import import_module
+from warnings import warn
+from rds2py.rdsutils import get_class, parse_rds
 
 def get_counts_adata(adata, layer=None):
     if layer is None:
@@ -118,3 +122,130 @@ def splat_bulk_reference(query=None,
     adata_new = anndata.AnnData(X=data.T, var=pd.DataFrame(index=gene_names), obs=newmeta)
 
     return adata_new
+
+
+REGISTRY = {
+    # typed vectors
+    "integer_vector": "rds2py.read_atomic.read_integer_vector",
+    "boolean_vector": "rds2py.read_atomic.read_boolean_vector",
+    "string_vector": "rds2py.read_atomic.read_string_vector",
+    "double_vector": "rds2py.read_atomic.read_double_vector",
+    # dictionary
+    "vector": "rds2py.read_dict.read_dict",
+    # factors
+    "factor": "rds2py.read_factor.read_factor",
+    # Rle
+    "Rle": "rds2py.read_rle.read_rle",
+    # matrices
+    "dgCMatrix": "rds2py.read_matrix.read_dgcmatrix",
+    "dgRMatrix": "rds2py.read_matrix.read_dgrmatrix",
+    "dgTMatrix": "rds2py.read_matrix.read_dgtmatrix",
+    "ndarray": "rds2py.read_matrix.read_ndarray",
+    # data frames
+    "data.frame": "rds2py.read_frame.read_data_frame",
+    "DFrame": "rds2py.read_frame.read_dframe",
+    # genomic ranges
+    "GRanges": "rds2py.read_granges.read_genomic_ranges",
+    "GenomicRanges": "rds2py.read_granges.read_genomic_ranges",
+    "CompressedGRangesList": "rds2py.read_granges.read_granges_list",
+    "GRangesList": "rds2py.read_granges.read_granges_list",
+    # summarized experiment
+    "SummarizedExperiment": "rds2py.read_se.read_summarized_experiment",
+    "RangedSummarizedExperiment": "rds2py.read_se.read_ranged_summarized_experiment",
+    # single-cell experiment
+    "SingleCellExperiment": "rds2py.read_sce.read_single_cell_experiment",
+    "SummarizedExperimentByColumn": "rds2py.read_sce.read_alts_summarized_experiment_by_column",
+    # multi assay experiment
+    "MultiAssayExperiment": "rds2py.read_mae.read_multi_assay_experiment",
+    "ExperimentList": "rds2py.read_dict.read_dict",
+    # delayed matrices
+    "H5SparseMatrix": "rds2py.read_delayed_matrix.read_hdf5_sparse",
+}
+
+def _dispatcher(robject: dict, **kwargs):
+    _class_name = get_class(robject)
+
+    if _class_name is None:
+        return None
+
+    # if a class is registered, coerce the object
+    # to the representation.
+    if _class_name in REGISTRY:
+        try:
+            command = REGISTRY[_class_name]
+            if isinstance(command, str):
+                last_period = command.rfind(".")
+                mod = import_module(command[:last_period])
+                command = getattr(mod, command[last_period + 1 :])
+                REGISTRY[_class_name] = command
+
+            return command(robject, **kwargs)
+        except Exception as e:
+            warn(
+                f"Failed to coerce RDS object to class: '{_class_name}', returning the dictionary, {str(e)}",
+                RuntimeWarning,
+            )
+    else:
+        warn(
+            f"RDS file contains an unknown class: '{_class_name}', returning the dictionary",
+            RuntimeWarning,
+        )
+
+    return robject
+
+def get_counts_rds_obj(robj):
+    ints = robj["attributes"]["assays"]["attributes"]["data"]["attributes"]["listData"]["data"][0]['data']
+    dims = robj["attributes"]["assays"]["attributes"]["data"]["attributes"]["listData"]["data"][0]['attributes']['dim']['data']
+    return csr_matrix(np.reshape(counts, (-1, dims[0])), dtype=np.int32)
+
+def get_coldata_rds_obj(robj):
+    data = {}
+    robject = ref["attributes"]["colData"]
+    col_names = _dispatcher(robject["attributes"]["listData"]["attributes"]["names"])
+    for idx, colname in enumerate(col_names):
+        data[colname] = _dispatcher(robject["attributes"]["listData"]["data"][idx])
+
+    index = None
+    if robject["attributes"]["rownames"]["data"]:
+        index = _dispatcher(robject["attributes"]["rownames"])
+
+    nrows = None
+    if robject["attributes"]["nrows"]["data"]:
+        nrows = list(_dispatcher(robject["attributes"]["nrows"]))[0]
+
+    from biocframe import BiocFrame
+    df = BiocFrame(
+        data,
+        # column_names=col_names,
+        row_names=index,
+        number_of_rows=nrows,
+    )
+    meta = df.to_pandas()
+    meta.set_index("rownames")  
+    return meta
+
+def get_rowdata_rds_obj(robj):
+    data = {}
+    robject = ref["attributes"]["elementMetadata"]
+    row_names = _dispatcher(robject["attributes"]["listData"]["attributes"]["names"])
+    for idx, colname in enumerate(row_names):
+        data[colname] = _dispatcher(robject["attributes"]["listData"]["data"][idx])
+
+    index = None
+    if robject["attributes"]["rownames"]["data"]:
+        index = _dispatcher(robject["attributes"]["rownames"])
+
+    nrows = None
+    if robject["attributes"]["nrows"]["data"]:
+        nrows = list(_dispatcher(robject["attributes"]["nrows"]))[0]
+
+    from biocframe import BiocFrame
+    df = BiocFrame(
+        data,
+        # column_names=col_names,
+        row_names=index,
+        number_of_rows=nrows,
+    )
+    var = df.to_pandas()
+    var.index = var['gene_short_name']
+    return meta
