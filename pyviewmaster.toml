@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyviewmaster"
-version = "0.0.7"
+version = "0.0.8"
 description = "viewmastR uses machine learning implemented in Rust to perform automated cell type classification for single-cell genomic data.  Currently viewmastR is authored to work with scRNAseq data, but more features are coming."
 authors = [
     { name = "Scott Furlan", email = "scottfurlan@example.com" }
