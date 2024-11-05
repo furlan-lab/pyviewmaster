@@ -2,13 +2,15 @@ import numpy as np
 import pandas as pd
 import anndata
 import scipy.sparse
-from scipy.stats import gaussian_kde
+# from scipy.stats import gaussian_kde
 from scipy.sparse import csr_matrix
 from multiprocessing import Pool
 import warnings
 from importlib import import_module
 from warnings import warn
-from rds2py.rdsutils import get_class, parse_rds
+from rds2py.rdsutils import get_class
+from biocframe import BiocFrame
+
 
 def get_counts_adata(adata, layer=None):
     if layer is None:
@@ -200,7 +202,7 @@ def get_counts_rds_obj(robj):
 
 def get_coldata_rds_obj(robj):
     data = {}
-    robject = ref["attributes"]["colData"]
+    robject = robj["attributes"]["colData"]
     col_names = _dispatcher(robject["attributes"]["listData"]["attributes"]["names"])
     for idx, colname in enumerate(col_names):
         data[colname] = _dispatcher(robject["attributes"]["listData"]["data"][idx])
@@ -213,7 +215,6 @@ def get_coldata_rds_obj(robj):
     if robject["attributes"]["nrows"]["data"]:
         nrows = list(_dispatcher(robject["attributes"]["nrows"]))[0]
 
-    from biocframe import BiocFrame
     df = BiocFrame(
         data,
         # column_names=col_names,
@@ -226,7 +227,7 @@ def get_coldata_rds_obj(robj):
 
 def get_rowdata_rds_obj(robj):
     data = {}
-    robject = ref["attributes"]["elementMetadata"]
+    robject = obj["attributes"]["elementMetadata"]
     row_names = _dispatcher(robject["attributes"]["listData"]["attributes"]["names"])
     for idx, colname in enumerate(row_names):
         data[colname] = _dispatcher(robject["attributes"]["listData"]["data"][idx])
@@ -239,7 +240,6 @@ def get_rowdata_rds_obj(robj):
     if robject["attributes"]["nrows"]["data"]:
         nrows = list(_dispatcher(robject["attributes"]["nrows"]))[0]
 
-    from biocframe import BiocFrame
     df = BiocFrame(
         data,
         # column_names=col_names,

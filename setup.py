@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='pyviewmaster',  # Replace with your package name
-    version='0.0.5',
+    version='0.0.6',
     author='Scott Furlan',
     author_email='scott.furlan@example.com',
     description='viewmastR uses machine learning implemented in Rust to perform automated cell type classification for single-cell genomic data.  Currently viewmastR is authored to work with scRNAseq data, but more features are coming.',
@@ -22,7 +22,8 @@ setup(
         "scanpy",
         "scikit-learn",
         "scipy",
-        "rds2py" # Add your package dependencies here
+        "rds2py",
+        "biocframe" # Add your package dependencies here
     ],
     python_requires='>=3.9',
 )
