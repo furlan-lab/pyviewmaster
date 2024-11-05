@@ -248,4 +248,4 @@ def get_rowdata_rds_obj(robj):
     )
     var = df.to_pandas()
     var.index = var['gene_short_name']
-    return meta
+    return var
