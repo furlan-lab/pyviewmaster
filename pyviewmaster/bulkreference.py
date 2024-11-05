@@ -227,7 +227,7 @@ def get_coldata_rds_obj(robj):
 
 def get_rowdata_rds_obj(robj):
     data = {}
-    robject = obj["attributes"]["elementMetadata"]
+    robject = robj["attributes"]["elementMetadata"]
     row_names = _dispatcher(robject["attributes"]["listData"]["attributes"]["names"])
     for idx, colname in enumerate(row_names):
         data[colname] = _dispatcher(robject["attributes"]["listData"]["data"][idx])
