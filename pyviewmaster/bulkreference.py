@@ -198,7 +198,7 @@ def _dispatcher(robject: dict, **kwargs):
 def get_counts_rds_obj(robj):
     ints = robj["attributes"]["assays"]["attributes"]["data"]["attributes"]["listData"]["data"][0]['data']
     dims = robj["attributes"]["assays"]["attributes"]["data"]["attributes"]["listData"]["data"][0]['attributes']['dim']['data']
-    return csr_matrix(np.reshape(counts, (-1, dims[0])), dtype=np.int32)
+    return csr_matrix(np.reshape(ints, (-1, dims[0])), dtype=np.int16)
 
 def get_coldata_rds_obj(robj):
     data = {}
