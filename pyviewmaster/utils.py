@@ -3,6 +3,11 @@ import pandas as pd
 import numpy as np
 from sklearn.decomposition import PCA
 import anndata as ad
+from scipy.sparse import csr_matrix
+from rds2py.rdsutils import get_class
+from biocframe import BiocFrame
+from warnings import warn
+from importlib import import_module
 
 def add_souporcell_anndata(
     adata,
