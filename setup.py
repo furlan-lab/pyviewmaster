@@ -32,5 +32,5 @@ setup(
 micromamba activate scvelo_jupyter
 cd /Users/sfurlan/develop/pyviewmaster
 python setup.py sdist bdist_wheel
-twine upload dist/*
+twine upload --skip-existing dist/*
 '''
