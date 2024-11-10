@@ -1,241 +1,189 @@
 import numpy as np
 import pandas as pd
-import anndata
-import scipy.sparse
-from scipy.sparse import csr_matrix
-from joblib import Parallel, delayed
-import warnings
-from warnings import warn
+import anndata as ad
+from scipy import sparse
 
+def simulate_single_cells(
+    ref,
+    query,
+    N,
+    dist='sc-direct',
+    sc_assay_name='counts',
+    bulk_assay_name='counts',
+    bulk_feature_row='gene_short_name'
+):
+    """
+    Simulates N single cells for every bulk dataset case in `ref`,
+    using the count distribution from `query`.
+    
+    Parameters:
+    - ref (AnnData): The bulk reference AnnData object.
+    - query (AnnData): The single-cell query AnnData object.
+    - N (int): Number of single cells to generate per sample in `ref`.
+    - dist (str): Distribution to use for generating total counts ('sc-model' or 'sc-direct').
+    - sc_assay_name (str): Name of the layer in `query` containing scRNA-seq counts.
+    - bulk_feature_row (str): Column name in `ref.var` containing gene identifiers.
+    
+    Returns:
+    - expanded_adata (AnnData): An AnnData object with simulated single-cell data.
+    """
+    def get_counts_adata(adata, layer=None):
+        """
+        Retrieves the counts matrix from an AnnData object.
+        If layer is specified, uses that layer; otherwise, uses adata.X.
+        """
+        if layer is not None:
+            counts = adata.layers[layer]
+        else:
+            counts = adata.X
+        return counts
 
-def get_counts_adata(adata, layer=None):
-    return adata.layers[layer] if layer else adata.X
-
-
-def sum_counts(counts, axis=0):
-    return np.ravel(counts.sum(axis=axis))
-
-
-def splat_bulk_reference(query=None,
-                         ref=None, N=2, assay=None,
-                         bulk_feature_row="gene_short_name",
-                         bulk_assay_name=None,
-                         dist="sc-direct"):
-    if dist not in ["sc-direct", "sc-mimic", "bulk"]:
-        raise ValueError("dist must be one of 'sc-direct', 'sc-mimic', 'bulk'")
-
-    # Determine the sizes and bandwidth based on the distribution
-    if dist in ["sc-mimic", "sc-direct"]:
-        print("Finding count distribution of query")
-        counts_query = get_counts_adata(query, layer=assay)
-        sizes = sum_counts(counts_query, axis=0)
-        replace_counts = False
+    # Get counts from the query dataset
+    counts_query = get_counts_adata(query, layer=sc_assay_name)
+    if sparse.issparse(counts_query):
+        sizes = counts_query.sum(axis=1).A1  # Convert to 1D array
     else:
-        counts_ref_full = get_counts_adata(ref, layer=bulk_assay_name)
-        sizes = sum_counts(counts_ref_full, axis=0)
-        replace_counts = True
-
-    n = len(sizes)
-    sd_sizes = np.std(sizes, ddof=1)
-    IQR_sizes = np.subtract(*np.percentile(sizes, [75, 25]))
-    bw = 0.9 * min(sd_sizes, IQR_sizes / 1.34) * n ** (-1 / 5)
-
+        sizes = counts_query.sum(axis=1)
+    # min_size = sizes.min()
+    # max_size = sizes.max()
+    
+    # Number of single cells to generate
+    ss_cells = N * ref.shape[0]
+    
+    # Generate total counts for downsampled cells
+    if dist == "sc-model":
+        print("Modeling count distribution of query using Empirical CDF")
+        # Sort sizes to create the CDF
+        sorted_sizes = np.sort(sizes)
+        cdf = np.arange(1, len(sorted_sizes) + 1) / len(sorted_sizes)
+        # Draw random samples from a uniform distribution
+        uniform_samples = np.random.rand(ss_cells)
+        # Use inverse transform sampling to get values that match the empirical CDF
+        final_newsizes = np.interp(uniform_samples, cdf, sorted_sizes).astype(int)
+    else:
+        # Use the direct sampling approach for "sc-direct"
+        final_newsizes = np.random.choice(sizes, ss_cells, replace=True).astype(int)
+    
     print("Finding common features between ref and query")
     genes_query = query.var_names
     genes_ref = ref.var[bulk_feature_row].values
     universe = np.intersect1d(genes_ref, genes_query)
-
+    
     if len(universe) == 0:
         raise ValueError("No common genes found between ref and query.")
-
+    
     print(f"Simulating {N} single cells for every bulk dataset case")
-
-    # Map genes to indices for efficient lookup
-    gene_to_idx = {gene: idx for idx, gene in enumerate(genes_ref)}
-    indices = np.array([gene_to_idx[gene] for gene in universe])
-
+    
+    # Prepare the reference counts data
     counts_ref_full = get_counts_adata(ref, layer=bulk_assay_name)
-    counts = counts_ref_full[indices, :]
-    gene_names = universe
-
-    min_size = sizes.min()
-    max_size = sizes.max()
-
-    # Precompute the sizes and noise outside the function to avoid redundancy
-    def process_sample(n):
-        counts_n = counts[:, n].toarray().flatten() if scipy.sparse.issparse(counts) else counts[:, n]
-        counts_gt0 = counts_n > 0
-        if not np.any(counts_gt0):
-            warnings.warn(f"Sample {n} has no counts > 0.")
-            return None
-
-        splat_genes = np.where(counts_gt0)[0]
-        splat_counts = counts_n[counts_gt0]
-        total_counts = splat_counts.sum()
-        probs = splat_counts / total_counts
-
-        # Generate newsizes with added noise
-        newsizes = np.random.choice(sizes, N, replace=True) + np.random.normal(0, bw, N)
-        newsizes = newsizes[(newsizes > min_size) & (newsizes < max_size)]
-        if len(newsizes) == 0:
-            warnings.warn(f"No valid newsizes for sample {n}.")
-            return None
-        final_newsizes = np.random.choice(np.round(newsizes).astype(int), N)
-
-        # Sample counts using multinomial distribution
-        dl = []
-        for size in final_newsizes:
-            sample_counts = np.random.multinomial(int(size), probs)
-            counts_full = np.zeros(len(gene_names), dtype=int)
-            counts_full[splat_genes] = sample_counts
-            dl.append(counts_full)
-
-        return np.column_stack(dl)
-
-    num_cores = -1  # Use all available cores
-    results = Parallel(n_jobs=num_cores)(
-        delayed(process_sample)(n) for n in range(counts.shape[1])
+    if sparse.issparse(counts_ref_full):
+        counts_ref_full = counts_ref_full.todense()
+    counts_ref_full = pd.DataFrame(
+        counts_ref_full.T,
+        index=ref.var_names,
+        columns=ref.obs_names
     )
-
-    # Filter out None results
-    good_results = [res for res in results if res is not None]
-
-    if not good_results:
-        raise ValueError("No valid data generated.")
-
-    # Concatenate data
-    data = np.concatenate(good_results, axis=1)
-
-    # Create metadata
-    metai = np.repeat(np.arange(counts.shape[1]), N)
-    meta = ref.obs.reset_index(drop=True)
-    newmeta = meta.iloc[metai, :].reset_index(drop=True)
-
-    # Create anndata object
-    adata_new = anndata.AnnData(X=data.T, var=pd.DataFrame(index=gene_names), obs=newmeta)
-
-    return adata_new
-
-REGISTRY = {
-    # typed vectors
-    "integer_vector": "rds2py.read_atomic.read_integer_vector",
-    "boolean_vector": "rds2py.read_atomic.read_boolean_vector",
-    "string_vector": "rds2py.read_atomic.read_string_vector",
-    "double_vector": "rds2py.read_atomic.read_double_vector",
-    # dictionary
-    "vector": "rds2py.read_dict.read_dict",
-    # factors
-    "factor": "rds2py.read_factor.read_factor",
-    # Rle
-    "Rle": "rds2py.read_rle.read_rle",
-    # matrices
-    "dgCMatrix": "rds2py.read_matrix.read_dgcmatrix",
-    "dgRMatrix": "rds2py.read_matrix.read_dgrmatrix",
-    "dgTMatrix": "rds2py.read_matrix.read_dgtmatrix",
-    "ndarray": "rds2py.read_matrix.read_ndarray",
-    # data frames
-    "data.frame": "rds2py.read_frame.read_data_frame",
-    "DFrame": "rds2py.read_frame.read_dframe",
-    # genomic ranges
-    "GRanges": "rds2py.read_granges.read_genomic_ranges",
-    "GenomicRanges": "rds2py.read_granges.read_genomic_ranges",
-    "CompressedGRangesList": "rds2py.read_granges.read_granges_list",
-    "GRangesList": "rds2py.read_granges.read_granges_list",
-    # summarized experiment
-    "SummarizedExperiment": "rds2py.read_se.read_summarized_experiment",
-    "RangedSummarizedExperiment": "rds2py.read_se.read_ranged_summarized_experiment",
-    # single-cell experiment
-    "SingleCellExperiment": "rds2py.read_sce.read_single_cell_experiment",
-    "SummarizedExperimentByColumn": "rds2py.read_sce.read_alts_summarized_experiment_by_column",
-    # multi assay experiment
-    "MultiAssayExperiment": "rds2py.read_mae.read_multi_assay_experiment",
-    "ExperimentList": "rds2py.read_dict.read_dict",
-    # delayed matrices
-    "H5SparseMatrix": "rds2py.read_delayed_matrix.read_hdf5_sparse",
-}
-
-def _dispatcher(robject: dict, **kwargs):
-    _class_name = get_class(robject)
-
-    if _class_name is None:
-        return None
-
-    # if a class is registered, coerce the object
-    # to the representation.
-    if _class_name in REGISTRY:
-        try:
-            command = REGISTRY[_class_name]
-            if isinstance(command, str):
-                last_period = command.rfind(".")
-                mod = import_module(command[:last_period])
-                command = getattr(mod, command[last_period + 1 :])
-                REGISTRY[_class_name] = command
-
-            return command(robject, **kwargs)
-        except Exception as e:
-            warn(
-                f"Failed to coerce RDS object to class: '{_class_name}', returning the dictionary, {str(e)}",
-                RuntimeWarning,
-            )
-    else:
-        warn(
-            f"RDS file contains an unknown class: '{_class_name}', returning the dictionary",
-            RuntimeWarning,
+    # Ensure genes_ref are aligned with counts_ref_full
+    counts_ref_full = counts_ref_full.loc[genes_ref]
+    # Keep only the common genes
+    counts_ref_full = counts_ref_full.loc[universe]
+    # Create an AnnData object with the filtered counts
+    fdata = ad.AnnData(counts_ref_full.T)
+    fdata.obs = ref.obs.copy()
+    
+    # Ensure the number of cells matches
+    assert ss_cells == fdata.n_obs * N, "Mismatch in the number of single cells to generate."
+    
+    # Define the downsampling function
+    def downsample_counts_vectorized(counts_matrix, new_total_counts):
+        """
+        Downsamples counts for multiple cells using vectorized multinomial sampling.
+        """
+        # Compute total counts per cell
+        original_total_counts = counts_matrix.sum(axis=1)
+        # Avoid division by zero
+        nonzero_mask = original_total_counts > 0
+        # Compute probabilities
+        probabilities = np.zeros_like(counts_matrix, dtype=float)
+        probabilities[nonzero_mask] = (
+            counts_matrix[nonzero_mask] /
+            original_total_counts[nonzero_mask, np.newaxis]
         )
+        # Initialize the random number generator
+        rng = np.random.default_rng()
+        # Prepare an array to hold the downsampled counts
+        downsampled_counts = np.zeros_like(counts_matrix, dtype=int)
+        # Perform multinomial sampling where valid
+        valid_mask = nonzero_mask & (new_total_counts > 0)
+        if np.any(valid_mask):
+            downsampled_counts[valid_mask] = rng.multinomial(
+                n=new_total_counts[valid_mask],
+                pvals=probabilities[valid_mask]
+            )
+        return downsampled_counts
 
-    return robject
-
-def get_counts_rds_obj(robj):
-    ints = robj["attributes"]["assays"]["attributes"]["data"]["attributes"]["listData"]["data"][0]['data']
-    dims = robj["attributes"]["assays"]["attributes"]["data"]["attributes"]["listData"]["data"][0]['attributes']['dim']['data']
-    return csr_matrix(np.reshape(ints, (-1, dims[0])), dtype=np.int32)
-
-def get_coldata_rds_obj(robj):
-    data = {}
-    robject = robj["attributes"]["colData"]
-    col_names = _dispatcher(robject["attributes"]["listData"]["attributes"]["names"])
-    for idx, colname in enumerate(col_names):
-        data[colname] = _dispatcher(robject["attributes"]["listData"]["data"][idx])
-
-    index = None
-    if robject["attributes"]["rownames"]["data"]:
-        index = _dispatcher(robject["attributes"]["rownames"])
-
-    nrows = None
-    if robject["attributes"]["nrows"]["data"]:
-        nrows = list(_dispatcher(robject["attributes"]["nrows"]))[0]
-
-    df = BiocFrame(
-        data,
-        # column_names=col_names,
-        row_names=index,
-        number_of_rows=nrows,
+    # Define the expand function
+    def expand_anndata(adata, fold=10, total_counts_vector=None):
+        """
+        Expands an AnnData object by downsampling counts using vectorized sampling.
+        The `obs` DataFrame is similarly expanded.
+        """
+        # Convert counts to dense matrix if sparse
+        if sparse.issparse(adata.X):
+            original_counts = adata.X.toarray()
+        else:
+            original_counts = adata.X.copy()
+        
+        num_cells, num_genes = original_counts.shape
+        
+        # Validate the total_counts_vector
+        if total_counts_vector is not None:
+            expected_length = num_cells * fold
+            if len(total_counts_vector) != expected_length:
+                raise ValueError(
+                    f"The length of total_counts_vector ({len(total_counts_vector)}) "
+                    f"must be equal to the number of expanded cells ({expected_length})."
+                )
+            new_total_counts = np.maximum(np.array(total_counts_vector, dtype=int), 0)
+        else:
+            # Use the original total counts repeated `fold` times
+            original_total_counts = original_counts.sum(axis=1)
+            new_total_counts = np.tile(original_total_counts, fold)
+        
+        # Expand counts by repeating each cell `fold` times
+        expanded_counts = np.repeat(original_counts, fold, axis=0)
+        
+        # Downsample counts using vectorized multinomial sampling
+        downsampled_counts = downsample_counts_vectorized(expanded_counts, new_total_counts)
+        
+        # Expand the obs DataFrame
+        expanded_obs = pd.DataFrame(
+            np.repeat(adata.obs.values, fold, axis=0),
+            columns=adata.obs.columns
+        )
+        
+        # Generate replicate numbers and new observation names
+        replicate_numbers = np.tile(np.arange(1, fold + 1), num_cells)
+        repeated_indices = np.repeat(adata.obs_names.values, fold)
+        expanded_obs_names = [
+            f"{obs}_rep{rep}" for obs, rep in zip(repeated_indices, replicate_numbers)
+        ]
+        expanded_obs.index = expanded_obs_names
+        
+        # Create a new AnnData object with the downsampled counts and expanded obs
+        expanded_adata = ad.AnnData(
+            X=sparse.csr_matrix(downsampled_counts),
+            obs=expanded_obs,
+            var=adata.var.copy()
+        )
+        
+        return expanded_adata
+    
+    # Expand the data
+    expanded_adata = expand_anndata(
+        fdata,
+        fold=N,
+        total_counts_vector=final_newsizes
     )
-    meta = df.to_pandas()
-    meta.set_index("rownames")  
-    return meta
-
-def get_rowdata_rds_obj(robj):
-    data = {}
-    robject = robj["attributes"]["elementMetadata"]
-    row_names = _dispatcher(robject["attributes"]["listData"]["attributes"]["names"])
-    for idx, colname in enumerate(row_names):
-        data[colname] = _dispatcher(robject["attributes"]["listData"]["data"][idx])
-
-    index = None
-    if robject["attributes"]["rownames"]["data"]:
-        index = _dispatcher(robject["attributes"]["rownames"])
-
-    nrows = None
-    if robject["attributes"]["nrows"]["data"]:
-        nrows = list(_dispatcher(robject["attributes"]["nrows"]))[0]
-
-    df = BiocFrame(
-        data,
-        # column_names=col_names,
-        row_names=index,
-        number_of_rows=nrows,
-    )
-    var = df.to_pandas()
-    var.index = var['gene_short_name']
-    return var
+    
+    return expanded_adata
